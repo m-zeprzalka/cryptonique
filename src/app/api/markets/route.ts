@@ -29,7 +29,11 @@ export async function GET(req: NextRequest) {
   const debug = searchParams.get("debug") === "1"
 
   let usedProvider = "unknown"
-  let providerStatus: any[] = []
+  let providerStatus: Array<{
+    name: string
+    available: boolean
+    lastChecked: string
+  }> = []
 
   try {
     // Get provider status for debug info
@@ -45,14 +49,15 @@ export async function GET(req: NextRequest) {
     if (markets.length === 0) {
       // Use fallback synthetic data as last resort
       console.warn("[api/markets] No data from providers, using fallback data")
-      const fallbackMarkets = cryptoProviderManager.generateFallbackData(perPage)
-      
+      const fallbackMarkets =
+        cryptoProviderManager.generateFallbackData(perPage)
+
       const responseData = {
         vs,
         horizon,
         interval,
         predictedSteps: 6,
-        items: fallbackMarkets.map(market => ({
+        items: fallbackMarkets.map((market) => ({
           id: market.id,
           symbol: market.symbol,
           name: market.name,
@@ -71,7 +76,9 @@ export async function GET(req: NextRequest) {
       return response
     }
 
-    console.log(`[api/markets] Fetched ${markets.length} markets from ${usedProvider}`)
+    console.log(
+      `[api/markets] Fetched ${markets.length} markets from ${usedProvider}`
+    )
 
     // Determine hours for historical data
     const hours = horizon === "6h" ? 6 : horizon === "3h" ? 3 : 1
@@ -95,7 +102,10 @@ export async function GET(req: NextRequest) {
         batch.map(async (market) => {
           try {
             // Get historical data with fallback
-            const historyResult = await cryptoProviderManager.getHistory(market.id, hours)
+            const historyResult = await cryptoProviderManager.getHistory(
+              market.id,
+              hours
+            )
             const history = historyResult.data
 
             // Filter recent data points
@@ -195,7 +205,7 @@ export async function GET(req: NextRequest) {
       horizon,
       interval,
       predictedSteps: 6,
-      items: fallbackMarkets.map(market => ({
+      items: fallbackMarkets.map((market) => ({
         id: market.id,
         symbol: market.symbol,
         name: market.name,

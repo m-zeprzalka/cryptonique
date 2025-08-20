@@ -41,14 +41,21 @@ class CryptoProviderManager {
   }> {
     // Try last successful provider first
     if (this.lastSuccessfulProvider) {
-      const provider = this.providers.find(p => p.name === this.lastSuccessfulProvider)
+      const provider = this.providers.find(
+        (p) => p.name === this.lastSuccessfulProvider
+      )
       if (provider) {
         try {
           const data = await provider.getMarkets(perPage)
-          console.log(`[ProviderManager] Successfully used ${provider.name} (cached)`)
+          console.log(
+            `[ProviderManager] Successfully used ${provider.name} (cached)`
+          )
           return { data, provider: provider.name }
         } catch (error) {
-          console.warn(`[ProviderManager] Cached provider ${provider.name} failed:`, error)
+          console.warn(
+            `[ProviderManager] Cached provider ${provider.name} failed:`,
+            error
+          )
           this.lastSuccessfulProvider = null
         }
       }
@@ -59,7 +66,7 @@ class CryptoProviderManager {
       try {
         console.log(`[ProviderManager] Trying ${provider.name}...`)
         const data = await provider.getMarkets(perPage)
-        
+
         if (data.length > 0) {
           console.log(`[ProviderManager] Successfully used ${provider.name}`)
           this.lastSuccessfulProvider = provider.name
@@ -77,19 +84,27 @@ class CryptoProviderManager {
   /**
    * Get historical data with automatic provider fallback
    */
-  async getHistory(id: string, hours = 6): Promise<{
+  async getHistory(
+    id: string,
+    hours = 6
+  ): Promise<{
     data: HistoryPoint[]
     provider: string
   }> {
     // Try last successful provider first
     if (this.lastSuccessfulProvider) {
-      const provider = this.providers.find(p => p.name === this.lastSuccessfulProvider)
+      const provider = this.providers.find(
+        (p) => p.name === this.lastSuccessfulProvider
+      )
       if (provider) {
         try {
           const data = await provider.getHistory(id, hours)
           return { data, provider: provider.name }
         } catch (error) {
-          console.warn(`[ProviderManager] History from ${provider.name} failed:`, error)
+          console.warn(
+            `[ProviderManager] History from ${provider.name} failed:`,
+            error
+          )
         }
       }
     }
@@ -100,7 +115,10 @@ class CryptoProviderManager {
         const data = await provider.getHistory(id, hours)
         return { data, provider: provider.name }
       } catch (error) {
-        console.warn(`[ProviderManager] History from ${provider.name} failed:`, error)
+        console.warn(
+          `[ProviderManager] History from ${provider.name} failed:`,
+          error
+        )
         continue
       }
     }
@@ -112,11 +130,13 @@ class CryptoProviderManager {
   /**
    * Check which providers are available
    */
-  async getProviderStatus(): Promise<Array<{
-    name: string
-    available: boolean
-    lastChecked: string
-  }>> {
+  async getProviderStatus(): Promise<
+    Array<{
+      name: string
+      available: boolean
+      lastChecked: string
+    }>
+  > {
     const results = await Promise.allSettled(
       this.providers.map(async (provider) => ({
         name: provider.name,
@@ -125,9 +145,9 @@ class CryptoProviderManager {
       }))
     )
 
-    return results.map((result, index) => 
-      result.status === "fulfilled" 
-        ? result.value 
+    return results.map((result, index) =>
+      result.status === "fulfilled"
+        ? result.value
         : {
             name: this.providers[index]!.name,
             available: false,
@@ -140,7 +160,18 @@ class CryptoProviderManager {
    * Generate synthetic data as last resort fallback
    */
   generateFallbackData(perPage = 10): CryptoAsset[] {
-    const symbols = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]
+    const symbols = [
+      "BTC",
+      "ETH",
+      "BNB",
+      "SOL",
+      "XRP",
+      "ADA",
+      "DOGE",
+      "AVAX",
+      "DOT",
+      "LINK",
+    ]
     const basePrices = [43000, 2400, 580, 160, 0.52, 0.45, 0.17, 35, 8.5, 18]
 
     return symbols.slice(0, perPage).map((symbol, index) => {
@@ -154,7 +185,9 @@ class CryptoProviderManager {
         id: symbol.toLowerCase(),
         symbol,
         name: symbol,
-        price: parseFloat(price.toFixed(symbol === "BTC" ? 0 : symbol === "ETH" ? 0 : 4)),
+        price: parseFloat(
+          price.toFixed(symbol === "BTC" ? 0 : symbol === "ETH" ? 0 : 4)
+        ),
         change24h: parseFloat(change24h.toFixed(2)),
       }
     })

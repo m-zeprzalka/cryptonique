@@ -24,17 +24,21 @@ export async function GET() {
     const timestamp = new Date().toISOString()
 
     // Determine overall health
-    const anyAvailable = providerStatus.some(p => p.available)
-    const allAvailable = providerStatus.every(p => p.available)
+    const anyAvailable = providerStatus.some((p) => p.available)
+    const allAvailable = providerStatus.every((p) => p.available)
 
     const response = NextResponse.json({
       timestamp,
-      overallStatus: anyAvailable ? (allAvailable ? "healthy" : "degraded") : "unhealthy",
+      overallStatus: anyAvailable
+        ? allAvailable
+          ? "healthy"
+          : "degraded"
+        : "unhealthy",
       providers: providerStatus,
       summary: {
         total: providerStatus.length,
-        available: providerStatus.filter(p => p.available).length,
-        unavailable: providerStatus.filter(p => !p.available).length,
+        available: providerStatus.filter((p) => p.available).length,
+        unavailable: providerStatus.filter((p) => !p.available).length,
       },
     })
 

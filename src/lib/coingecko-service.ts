@@ -12,7 +12,7 @@ class CoinGeckoService {
   /** Mapping from our symbols to CoinGecko IDs */
   private readonly symbolToId: Record<string, string> = {
     BTC: "bitcoin",
-    ETH: "ethereum", 
+    ETH: "ethereum",
     BNB: "binancecoin",
     SOL: "solana",
     XRP: "ripple",
@@ -32,7 +32,7 @@ class CoinGeckoService {
   private getFullName(symbol: string): string {
     const nameMap: Record<string, string> = {
       BTC: "Bitcoin",
-      ETH: "Ethereum", 
+      ETH: "Ethereum",
       BNB: "BNB",
       SOL: "Solana",
       XRP: "XRP",
@@ -52,51 +52,61 @@ class CoinGeckoService {
   async getMarkets(perPage = 10): Promise<CryptoAsset[]> {
     try {
       const symbols = Object.keys(this.symbolToId).slice(0, perPage)
-      const ids = symbols.map(s => this.getCoinId(s)).join(',')
+      const ids = symbols.map((s) => this.getCoinId(s)).join(",")
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT)
 
       const url = new URL(`${this.baseUrl}/simple/price`)
-      url.searchParams.set('ids', ids)
-      url.searchParams.set('vs_currencies', 'usd')
-      url.searchParams.set('include_24hr_change', 'true')
+      url.searchParams.set("ids", ids)
+      url.searchParams.set("vs_currencies", "usd")
+      url.searchParams.set("include_24hr_change", "true")
 
       const response = await fetch(url.toString(), {
         signal: controller.signal,
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Cryptonique/1.0',
+          Accept: "application/json",
+          "User-Agent": "Cryptonique/1.0",
         },
       })
 
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`)
+        throw new Error(
+          `CoinGecko API error: ${response.status} ${response.statusText}`
+        )
       }
 
-      const data = await response.json() as Record<string, {
-        usd: number
-        usd_24h_change: number
-      }>
-
-      console.log(`[CoinGeckoService] Fetched ${Object.keys(data).length} markets from CoinGecko`)
-
-      return symbols.map(symbol => {
-        const id = this.getCoinId(symbol)
-        const price = data[id]?.usd || 0
-        const change24h = data[id]?.usd_24h_change || 0
-
-        return {
-          id: symbol.toLowerCase(),
-          symbol: symbol,
-          name: this.getFullName(symbol),
-          price,
-          change24h,
+      const data = (await response.json()) as Record<
+        string,
+        {
+          usd: number
+          usd_24h_change: number
         }
-      }).filter(item => item.price > 0)
+      >
 
+      console.log(
+        `[CoinGeckoService] Fetched ${
+          Object.keys(data).length
+        } markets from CoinGecko`
+      )
+
+      return symbols
+        .map((symbol) => {
+          const id = this.getCoinId(symbol)
+          const price = data[id]?.usd || 0
+          const change24h = data[id]?.usd_24h_change || 0
+
+          return {
+            id: symbol.toLowerCase(),
+            symbol: symbol,
+            name: this.getFullName(symbol),
+            price,
+            change24h,
+          }
+        })
+        .filter((item) => item.price > 0)
     } catch (error) {
       console.error("[CoinGeckoService] Error fetching markets:", error)
       throw new Error(
@@ -119,41 +129,49 @@ class CoinGeckoService {
       const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT)
 
       const url = new URL(`${this.baseUrl}/coins/${coinId}/market_chart`)
-      url.searchParams.set('vs_currency', 'usd')
-      url.searchParams.set('days', String(days))
-      url.searchParams.set('interval', hours <= 1 ? 'minutely' : 'hourly')
+      url.searchParams.set("vs_currency", "usd")
+      url.searchParams.set("days", String(days))
+      url.searchParams.set("interval", hours <= 1 ? "minutely" : "hourly")
 
       const response = await fetch(url.toString(), {
         signal: controller.signal,
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Cryptonique/1.0',
+          Accept: "application/json",
+          "User-Agent": "Cryptonique/1.0",
         },
       })
 
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        throw new Error(`CoinGecko history API error: ${response.status} ${response.statusText}`)
+        throw new Error(
+          `CoinGecko history API error: ${response.status} ${response.statusText}`
+        )
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         prices: [number, number][]
       }
 
       // Filter to requested time range
       const cutoff = Date.now() - hours * 60 * 60 * 1000
-      const recentPrices = data.prices.filter(([timestamp]) => timestamp >= cutoff)
+      const recentPrices = data.prices.filter(
+        ([timestamp]) => timestamp >= cutoff
+      )
 
-      console.log(`[CoinGeckoService] Fetched ${recentPrices.length} history points for ${coinId}`)
+      console.log(
+        `[CoinGeckoService] Fetched ${recentPrices.length} history points for ${coinId}`
+      )
 
       return recentPrices.map(([timestamp, price]) => ({
         t: timestamp,
         price,
       }))
-
     } catch (error) {
-      console.error(`[CoinGeckoService] Error fetching history for ${id}:`, error)
+      console.error(
+        `[CoinGeckoService] Error fetching history for ${id}:`,
+        error
+      )
       return []
     }
   }
@@ -169,8 +187,8 @@ class CoinGeckoService {
       const response = await fetch(`${this.baseUrl}/ping`, {
         signal: controller.signal,
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Cryptonique/1.0',
+          Accept: "application/json",
+          "User-Agent": "Cryptonique/1.0",
         },
       })
 
