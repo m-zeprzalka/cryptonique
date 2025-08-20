@@ -5,6 +5,21 @@ import { improvedPredict } from "@/lib/predict"
 // Next.js requires this to be a literal for static analysis
 export const revalidate = 30
 
+// Vercel edge runtime compatibility
+export const runtime = 'nodejs'
+
+// Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  })
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const vs = searchParams.get("vs") ?? "usd"
@@ -101,7 +116,7 @@ export async function GET(req: NextRequest) {
     // Add debug information if requested
     if (debug) {
       const binanceAvailable = await binanceService.isAvailable()
-      return NextResponse.json({
+      const response = NextResponse.json({
         ...responseData,
         debug: {
           provider: "Binance",
@@ -111,12 +126,27 @@ export async function GET(req: NextRequest) {
           timestamp: new Date().toISOString(),
         },
       })
+      
+      // Add CORS headers for Vercel
+      response.headers.set('Access-Control-Allow-Origin', '*')
+      response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
+      
+      return response
     }
 
     console.log(
       `[api/markets] Processed ${results.length} markets successfully`
     )
-    return NextResponse.json(responseData)
+    
+    const response = NextResponse.json(responseData)
+    
+    // Add CORS headers for Vercel
+    response.headers.set('Access-Control-Allow-Origin', '*')
+    response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
+    
+    return response
   } catch (error) {
     console.error("[api/markets] Error:", error)
 
@@ -131,7 +161,7 @@ export async function GET(req: NextRequest) {
 
     if (debug) {
       const binanceAvailable = await binanceService.isAvailable()
-      return NextResponse.json({
+      const response = NextResponse.json({
         ...errorResponse,
         debug: {
           provider: "Binance",
@@ -140,8 +170,22 @@ export async function GET(req: NextRequest) {
           timestamp: new Date().toISOString(),
         },
       })
+      
+      // Add CORS headers for Vercel
+      response.headers.set('Access-Control-Allow-Origin', '*')
+      response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
+      
+      return response
     }
 
-    return NextResponse.json(errorResponse, { status: 500 })
+    const response = NextResponse.json(errorResponse, { status: 500 })
+    
+    // Add CORS headers for Vercel
+    response.headers.set('Access-Control-Allow-Origin', '*')
+    response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
+    
+    return response
   }
 }

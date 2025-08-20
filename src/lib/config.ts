@@ -14,8 +14,8 @@ export const DEFAULT_CRYPTO_COUNT = 10
 
 /** API Configuration */
 export const API_CONFIG = {
-  /** Request timeout in milliseconds */
-  TIMEOUT: 10000,
+  /** Request timeout in milliseconds - reduced for Vercel */
+  TIMEOUT: process.env.NODE_ENV === 'production' ? 8000 : 10000,
 
   /** Maximum retries for failed requests */
   MAX_RETRIES: 3,

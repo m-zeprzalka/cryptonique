@@ -85,13 +85,23 @@ class BinanceService {
         .map((s) => `"${s}"`)
         .join(",")
 
+      // Create manual timeout for Vercel compatibility
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT)
+
       const response = await fetch(
         `${this.baseUrl}/ticker/24hr?symbols=[${symbolsQuery}]`,
         {
           next: { revalidate: 30 }, // Cache for 30 seconds
-          signal: AbortSignal.timeout(API_CONFIG.TIMEOUT),
+          signal: controller.signal,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Cryptonique/1.0',
+          },
         }
       )
+
+      clearTimeout(timeoutId)
 
       if (!response.ok) {
         throw new Error(
@@ -147,9 +157,20 @@ class BinanceService {
       url.searchParams.set("interval", interval)
       url.searchParams.set("limit", String(limit))
 
+      // Create manual timeout for Vercel compatibility
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT)
+
       const response = await fetch(url.toString(), {
         next: { revalidate: 30 },
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Cryptonique/1.0',
+        },
       })
+
+      clearTimeout(timeoutId)
 
       if (!response.ok) {
         throw new Error(
@@ -194,9 +215,19 @@ class BinanceService {
    */
   async isAvailable(): Promise<boolean> {
     try {
+      // Create manual timeout for Vercel compatibility
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+
       const response = await fetch(`${this.baseUrl}/ping`, {
-        signal: AbortSignal.timeout(5000), // 5 second timeout
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Cryptonique/1.0',
+        },
       })
+
+      clearTimeout(timeoutId)
       return response.ok
     } catch {
       return false
