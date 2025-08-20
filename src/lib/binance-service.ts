@@ -95,8 +95,8 @@ class BinanceService {
           next: { revalidate: 30 }, // Cache for 30 seconds
           signal: controller.signal,
           headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Cryptonique/1.0',
+            Accept: "application/json",
+            "User-Agent": "Cryptonique/1.0",
           },
         }
       )
@@ -165,8 +165,8 @@ class BinanceService {
         next: { revalidate: 30 },
         signal: controller.signal,
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Cryptonique/1.0',
+          Accept: "application/json",
+          "User-Agent": "Cryptonique/1.0",
         },
       })
 
@@ -222,8 +222,8 @@ class BinanceService {
       const response = await fetch(`${this.baseUrl}/ping`, {
         signal: controller.signal,
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Cryptonique/1.0',
+          Accept: "application/json",
+          "User-Agent": "Cryptonique/1.0",
         },
       })
 

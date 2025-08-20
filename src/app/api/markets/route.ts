@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
-import { binanceService } from "@/lib/binance-service"
+import { cryptoProviderManager } from "@/lib/crypto-provider-manager"
 import { improvedPredict } from "@/lib/predict"
 
 // Next.js requires this to be a literal for static analysis
 export const revalidate = 30
 
 // Vercel edge runtime compatibility
-export const runtime = 'nodejs'
+export const runtime = "nodejs"
 
 // Handle CORS preflight requests
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
     headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
     },
   })
 }
@@ -28,15 +28,50 @@ export async function GET(req: NextRequest) {
   const perPage = Number(searchParams.get("n") ?? 10)
   const debug = searchParams.get("debug") === "1"
 
-  try {
-    // Fetch market data from Binance
-    const markets = await binanceService.getMarkets(perPage)
+  let usedProvider = "unknown"
+  let providerStatus: any[] = []
 
-    if (markets.length === 0) {
-      throw new Error("No market data received from Binance")
+  try {
+    // Get provider status for debug info
+    if (debug) {
+      providerStatus = await cryptoProviderManager.getProviderStatus()
     }
 
-    console.log(`[api/markets] Fetched ${markets.length} markets from Binance`)
+    // Fetch market data with automatic fallback
+    const marketResult = await cryptoProviderManager.getMarkets(perPage)
+    const markets = marketResult.data
+    usedProvider = marketResult.provider
+
+    if (markets.length === 0) {
+      // Use fallback synthetic data as last resort
+      console.warn("[api/markets] No data from providers, using fallback data")
+      const fallbackMarkets = cryptoProviderManager.generateFallbackData(perPage)
+      
+      const responseData = {
+        vs,
+        horizon,
+        interval,
+        predictedSteps: 6,
+        items: fallbackMarkets.map(market => ({
+          id: market.id,
+          symbol: market.symbol,
+          name: market.name,
+          price: market.price,
+          change24h: market.change24h,
+          series: [], // No historical data for fallback
+        })),
+        fallback: true,
+        provider: "synthetic",
+      }
+
+      const response = NextResponse.json(responseData)
+      response.headers.set("Access-Control-Allow-Origin", "*")
+      response.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")
+      response.headers.set("Access-Control-Allow-Headers", "Content-Type")
+      return response
+    }
+
+    console.log(`[api/markets] Fetched ${markets.length} markets from ${usedProvider}`)
 
     // Determine hours for historical data
     const hours = horizon === "6h" ? 6 : horizon === "3h" ? 3 : 1
@@ -59,8 +94,9 @@ export async function GET(req: NextRequest) {
       const batchResults = await Promise.allSettled(
         batch.map(async (market) => {
           try {
-            // Get historical data from Binance
-            const history = await binanceService.getHistory(market.id, hours)
+            // Get historical data with fallback
+            const historyResult = await cryptoProviderManager.getHistory(market.id, hours)
+            const history = historyResult.data
 
             // Filter recent data points
             const cutoff = Date.now() - hours * 60 * 60 * 1000
@@ -111,81 +147,93 @@ export async function GET(req: NextRequest) {
       interval,
       predictedSteps,
       items: results,
+      provider: usedProvider,
     }
 
     // Add debug information if requested
     if (debug) {
-      const binanceAvailable = await binanceService.isAvailable()
       const response = NextResponse.json({
         ...responseData,
         debug: {
-          provider: "Binance",
+          provider: usedProvider,
           marketsCount: markets.length,
           processedCount: results.length,
-          binanceAvailable,
+          providerStatus,
           timestamp: new Date().toISOString(),
         },
       })
-      
+
       // Add CORS headers for Vercel
-      response.headers.set('Access-Control-Allow-Origin', '*')
-      response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
-      response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
-      
+      response.headers.set("Access-Control-Allow-Origin", "*")
+      response.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")
+      response.headers.set("Access-Control-Allow-Headers", "Content-Type")
+
       return response
     }
 
     console.log(
-      `[api/markets] Processed ${results.length} markets successfully`
+      `[api/markets] Processed ${results.length} markets successfully using ${usedProvider}`
     )
-    
+
     const response = NextResponse.json(responseData)
-    
+
     // Add CORS headers for Vercel
-    response.headers.set('Access-Control-Allow-Origin', '*')
-    response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
-    
+    response.headers.set("Access-Control-Allow-Origin", "*")
+    response.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type")
+
     return response
   } catch (error) {
     console.error("[api/markets] Error:", error)
+
+    // Fallback to synthetic data on complete failure
+    console.warn("[api/markets] Complete failure, using synthetic fallback")
+    const fallbackMarkets = cryptoProviderManager.generateFallbackData(perPage)
 
     const errorResponse = {
       vs,
       horizon,
       interval,
       predictedSteps: 6,
-      items: [],
+      items: fallbackMarkets.map(market => ({
+        id: market.id,
+        symbol: market.symbol,
+        name: market.name,
+        price: market.price,
+        change24h: market.change24h,
+        series: [],
+      })),
       error: error instanceof Error ? error.message : "Unknown error",
+      fallback: true,
+      provider: "synthetic",
     }
 
     if (debug) {
-      const binanceAvailable = await binanceService.isAvailable()
       const response = NextResponse.json({
         ...errorResponse,
         debug: {
-          provider: "Binance",
-          binanceAvailable,
+          provider: usedProvider,
+          providerStatus,
           error: String(error),
           timestamp: new Date().toISOString(),
         },
       })
-      
+
       // Add CORS headers for Vercel
-      response.headers.set('Access-Control-Allow-Origin', '*')
-      response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
-      response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
-      
+      response.headers.set("Access-Control-Allow-Origin", "*")
+      response.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")
+      response.headers.set("Access-Control-Allow-Headers", "Content-Type")
+
       return response
     }
 
-    const response = NextResponse.json(errorResponse, { status: 500 })
-    
+    const response = NextResponse.json(errorResponse, { status: 200 }) // Return 200 with fallback data
+
     // Add CORS headers for Vercel
-    response.headers.set('Access-Control-Allow-Origin', '*')
-    response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
-    
+    response.headers.set("Access-Control-Allow-Origin", "*")
+    response.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type")
+
     return response
   }
 }
