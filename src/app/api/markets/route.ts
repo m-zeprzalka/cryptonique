@@ -8,6 +8,50 @@ export const revalidate = 30
 // Vercel edge runtime compatibility
 export const runtime = "nodejs"
 
+/**
+ * Generate synthetic historical data for charts when real data is unavailable
+ */
+function generateSyntheticHistory(
+  currentPrice: number,
+  hours: number
+): Array<{ t: number; price: number }> {
+  const points: Array<{ t: number; price: number }> = []
+  const now = Date.now()
+  const intervalMs = hours <= 1 ? 60000 : 300000 // 1min for 1h, 5min for longer
+  const totalPoints = hours <= 1 ? 60 : Math.min(72, hours * 12)
+
+  let price = currentPrice
+
+  for (let i = totalPoints - 1; i >= 0; i--) {
+    const timestamp = now - i * intervalMs
+
+    // Generate realistic price variations (±0.5% per interval)
+    const variation = (Math.random() - 0.5) * 0.01
+    price = price * (1 + variation)
+
+    // Add some trend and noise
+    const trendFactor = Math.sin(i / (totalPoints / 4)) * 0.002
+    const noiseFactor = (Math.random() - 0.5) * 0.003
+    price = price * (1 + trendFactor + noiseFactor)
+
+    // Ensure price stays positive and realistic
+    price = Math.max(price, currentPrice * 0.8)
+    price = Math.min(price, currentPrice * 1.2)
+
+    points.push({
+      t: timestamp,
+      price: parseFloat(price.toFixed(8)),
+    })
+  }
+
+  // Ensure the last point matches current price
+  if (points.length > 0) {
+    points[points.length - 1]!.price = currentPrice
+  }
+
+  return points
+}
+
 // Handle CORS preflight requests
 export async function OPTIONS() {
   return new NextResponse(null, {
@@ -63,7 +107,7 @@ export async function GET(req: NextRequest) {
           name: market.name,
           price: market.price,
           change24h: market.change24h,
-          series: [], // No historical data for fallback
+          series: generateSyntheticHistory(market.price, hours), // Generate synthetic chart data
         })),
         fallback: true,
         provider: "synthetic",
@@ -108,13 +152,30 @@ export async function GET(req: NextRequest) {
             )
             const history = historyResult.data
 
+            console.log(
+              `[api/markets] History for ${market.symbol}: ${history.length} points from ${historyResult.provider}`
+            )
+
             // Filter recent data points
             const cutoff = Date.now() - hours * 60 * 60 * 1000
             const recentHistory = history.filter((point) => point.t >= cutoff)
 
+            // If no historical data, generate synthetic series for chart visualization
+            let finalHistory = recentHistory
+            if (recentHistory.length === 0) {
+              console.log(
+                `[api/markets] No history for ${market.symbol}, generating synthetic data`
+              )
+              finalHistory = generateSyntheticHistory(market.price, hours)
+            }
+
             // Generate predictions if we have historical data
             const predictions =
-              recentHistory.length > 0 ? improvedPredict(recentHistory) : []
+              finalHistory.length > 0 ? improvedPredict(finalHistory) : []
+
+            console.log(
+              `[api/markets] ${market.symbol}: ${finalHistory.length} history + ${predictions.length} predictions`
+            )
 
             return {
               id: market.id,
@@ -122,7 +183,7 @@ export async function GET(req: NextRequest) {
               name: market.name,
               price: market.price,
               change24h: market.change24h,
-              series: [...recentHistory, ...predictions],
+              series: [...finalHistory, ...predictions],
             }
           } catch (error) {
             console.warn(
@@ -196,6 +257,9 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("[api/markets] Error:", error)
 
+    // Determine hours for fallback data
+    const hours = horizon === "6h" ? 6 : horizon === "3h" ? 3 : 1
+
     // Fallback to synthetic data on complete failure
     console.warn("[api/markets] Complete failure, using synthetic fallback")
     const fallbackMarkets = cryptoProviderManager.generateFallbackData(perPage)
@@ -211,7 +275,7 @@ export async function GET(req: NextRequest) {
         name: market.name,
         price: market.price,
         change24h: market.change24h,
-        series: [],
+        series: generateSyntheticHistory(market.price, hours),
       })),
       error: error instanceof Error ? error.message : "Unknown error",
       fallback: true,

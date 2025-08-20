@@ -179,6 +179,18 @@ export function CryptoCard({
     console.warn("CryptoCard: missing data.name for", data.symbol)
   }
 
+  // Debug logging for chart data issues
+  if (process.env.NODE_ENV !== "production" && data) {
+    console.log(
+      `CryptoCard ${data.symbol}: ${
+        data.points?.length || 0
+      } points, chartData: ${chartData.length}`
+    )
+    if (chartData.length === 0) {
+      console.warn(`CryptoCard ${data.symbol}: No chart data available`)
+    }
+  }
+
   // Stany ładowania / błędu
   if (loading) {
     return (
@@ -271,93 +283,106 @@ export function CryptoCard({
       </CardHeader>
       <CardContent className={cn(compact && "pt-0")}>
         <div className={cn("h-28 sm:h-32", compact && "h-24")}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={chartData}
-              margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-            >
-              <defs>
-                <linearGradient
-                  id={`priceFill-${gradId}`}
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor="var(--chart-2)"
-                    stopOpacity={0.18}
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={chartData}
+                margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+              >
+                <defs>
+                  <linearGradient
+                    id={`priceFill-${gradId}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor="var(--chart-2)"
+                      stopOpacity={0.18}
+                    />
+                    <stop
+                      offset="100%"
+                      stopColor="var(--chart-2)"
+                      stopOpacity={0.02}
+                    />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                <XAxis dataKey="time" hide tickLine={false} axisLine={false} />
+                <YAxis hide domain={["auto", "auto"]} />
+                {highlightPrediction && predictedCount > 0 && (
+                  <ReferenceArea
+                    x1={chartData[chartData.length - predictedCount - 1]?.time}
+                    x2={chartData[chartData.length - 1]?.time}
+                    ifOverflow="hidden"
+                    fill="var(--chart-1)"
+                    fillOpacity={0.05}
+                    strokeOpacity={0}
                   />
-                  <stop
-                    offset="100%"
-                    stopColor="var(--chart-2)"
-                    stopOpacity={0.02}
-                  />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-              <XAxis dataKey="time" hide tickLine={false} axisLine={false} />
-              <YAxis hide domain={["auto", "auto"]} />
-              {highlightPrediction && predictedCount > 0 && (
-                <ReferenceArea
-                  x1={chartData[chartData.length - predictedCount - 1]?.time}
-                  x2={chartData[chartData.length - 1]?.time}
-                  ifOverflow="hidden"
-                  fill="var(--chart-1)"
-                  fillOpacity={0.05}
-                  strokeOpacity={0}
+                )}
+                <Tooltip
+                  cursor={{
+                    stroke: "var(--border)",
+                    strokeWidth: 1,
+                    strokeDasharray: "3 3",
+                  }}
+                  content={<CustomTooltip />}
                 />
-              )}
-              <Tooltip
-                cursor={{
-                  stroke: "var(--border)",
-                  strokeWidth: 1,
-                  strokeDasharray: "3 3",
-                }}
-                content={<CustomTooltip />}
-              />
-              <Area
-                type="monotone"
-                dataKey="price"
-                fill={`url(#priceFill-${gradId})`}
-                stroke="transparent"
-                isAnimationActive={false}
-                connectNulls
-              />
-              <Line
-                type="monotone"
-                dataKey="price"
-                stroke="var(--chart-2)"
-                dot={false}
-                strokeWidth={2}
-                connectNulls
-                isAnimationActive={false}
-                activeDot={{
-                  r: 3,
-                  stroke: "var(--card)",
-                  strokeWidth: 2,
-                  fill: "var(--chart-2)",
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="predicted"
-                stroke="var(--chart-1)"
-                strokeDasharray="4 4"
-                dot={false}
-                strokeWidth={2}
-                connectNulls
-                isAnimationActive={false}
-                activeDot={{
-                  r: 3,
-                  stroke: "var(--card)",
-                  strokeWidth: 2,
-                  fill: "var(--chart-1)",
-                }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+                <Area
+                  type="monotone"
+                  dataKey="price"
+                  fill={`url(#priceFill-${gradId})`}
+                  stroke="transparent"
+                  isAnimationActive={false}
+                  connectNulls
+                />
+                <Line
+                  type="monotone"
+                  dataKey="price"
+                  stroke="var(--chart-2)"
+                  dot={false}
+                  strokeWidth={2}
+                  connectNulls
+                  isAnimationActive={false}
+                  activeDot={{
+                    r: 3,
+                    stroke: "var(--card)",
+                    strokeWidth: 2,
+                    fill: "var(--chart-2)",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="predicted"
+                  stroke="var(--chart-1)"
+                  strokeDasharray="4 4"
+                  dot={false}
+                  strokeWidth={2}
+                  connectNulls
+                  isAnimationActive={false}
+                  activeDot={{
+                    r: 3,
+                    stroke: "var(--card)",
+                    strokeWidth: 2,
+                    fill: "var(--chart-1)",
+                  }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex items-center justify-center border-2 border-dashed border-muted-foreground/20 rounded-lg">
+              <div className="text-center">
+                <div className="text-muted-foreground text-xs mb-1">
+                  Brak danych wykresu
+                </div>
+                <div className="text-muted-foreground/70 text-[10px]">
+                  Historyczne dane niedostępne
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         {/* Mini metryki */}
         <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] leading-tight text-muted-foreground">
