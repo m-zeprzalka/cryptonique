@@ -48,17 +48,20 @@ export async function GET(req: NextRequest) {
 
     if (markets.length === 0) {
       console.error("[api/markets] No data from any provider - API failure")
-      
-      return NextResponse.json({
-        vs,
-        horizon,
-        interval,
-        predictedSteps: 6,
-        items: [],
-        error: "No cryptocurrency data available from any provider",
-        fallback: false,
-        provider: "none",
-      }, { status: 503 }) // Service Unavailable
+
+      return NextResponse.json(
+        {
+          vs,
+          horizon,
+          interval,
+          predictedSteps: 6,
+          items: [],
+          error: "No cryptocurrency data available from any provider",
+          fallback: false,
+          provider: "none",
+        },
+        { status: 503 }
+      ) // Service Unavailable
     }
 
     console.log(
@@ -101,14 +104,6 @@ export async function GET(req: NextRequest) {
             const cutoff = Date.now() - hours * 60 * 60 * 1000
             const recentHistory = history.filter((point) => point.t >= cutoff)
 
-            // Skip currencies without historical data - we want only real data
-            if (recentHistory.length === 0) {
-              console.log(
-                `[api/markets] Skipping ${market.symbol} - no historical data available`
-              )
-              return null
-            }
-
             // Generate predictions if we have historical data
             const predictions =
               recentHistory.length > 0 ? improvedPredict(recentHistory) : []
@@ -143,9 +138,9 @@ export async function GET(req: NextRequest) {
         })
       )
 
-      // Collect successful results (skip null values)
+      // Collect successful results
       for (const result of batchResults) {
-        if (result.status === "fulfilled" && result.value !== null) {
+        if (result.status === "fulfilled") {
           results.push(result.value)
         }
       }

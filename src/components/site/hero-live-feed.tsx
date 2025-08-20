@@ -6,15 +6,19 @@ type TItem = { symbol: string; change: string; price?: number }
 
 const fetcher = async (url: string) => {
   const response = await fetch(url)
-  if (!response.ok) throw new Error('Failed to fetch')
+  if (!response.ok) throw new Error("Failed to fetch")
   return response.json()
 }
 
 export function HeroLiveFeed() {
-  const { data, error } = useSWR('/api/markets?vs=usd&h=1h&i=minutely&n=6', fetcher, {
-    refreshInterval: 30000, // Refresh every 30 seconds
-    revalidateOnFocus: false
-  })
+  const { data, error } = useSWR(
+    "/api/markets?vs=usd&h=1h&i=minutely&n=6",
+    fetcher,
+    {
+      refreshInterval: 30000, // Refresh every 30 seconds
+      revalidateOnFocus: false,
+    }
+  )
 
   const prefersReduced =
     typeof window !== "undefined" &&
@@ -23,17 +27,17 @@ export function HeroLiveFeed() {
   // Create items from real API data or fallback
   const items: TItem[] = React.useMemo(() => {
     if (data?.items && data.items.length > 0) {
-      return data.items.slice(0, 6).map((item: {
-        symbol: string
-        change24h: number
-        price: number
-      }) => ({
-        symbol: item.symbol,
-        change: `${item.change24h >= 0 ? '+' : ''}${item.change24h.toFixed(1)}%`,
-        price: item.price
-      }))
+      return data.items
+        .slice(0, 6)
+        .map((item: { symbol: string; change24h: number; price: number }) => ({
+          symbol: item.symbol,
+          change: `${item.change24h >= 0 ? "+" : ""}${item.change24h.toFixed(
+            1
+          )}%`,
+          price: item.price,
+        }))
     }
-    
+
     // Fallback data if API fails
     return [
       { symbol: "BTC", change: "+1.2%" },
@@ -49,7 +53,7 @@ export function HeroLiveFeed() {
   const loop = items.concat(items)
 
   if (error) {
-    console.warn('Hero live feed API error:', error)
+    console.warn("Hero live feed API error:", error)
   }
 
   return (
@@ -87,7 +91,10 @@ export function HeroLiveFeed() {
               </span>
               {it.price && (
                 <span className="text-muted-foreground/70 ml-1">
-                  ${it.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  $
+                  {it.price.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}
                 </span>
               )}
             </li>
