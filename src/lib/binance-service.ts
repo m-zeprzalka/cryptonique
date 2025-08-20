@@ -80,7 +80,7 @@ class BinanceService {
   async getMarkets(perPage = 10): Promise<CryptoAsset[]> {
     try {
       console.log(`[BinanceService] Starting getMarkets, perPage: ${perPage}`)
-      
+
       // Use targeted symbol query to get specific cryptocurrencies
       const symbolsQuery = this.supportedSymbols
         .slice(0, Math.min(perPage * 2, this.supportedSymbols.length))
@@ -108,10 +108,14 @@ class BinanceService {
 
       clearTimeout(timeoutId)
 
-      console.log(`[BinanceService] Response: ${response.status} ${response.statusText}`)
+      console.log(
+        `[BinanceService] Response: ${response.status} ${response.statusText}`
+      )
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unable to read error body')
+        const errorText = await response
+          .text()
+          .catch(() => "Unable to read error body")
         console.error(`[BinanceService] Error details:`, errorText)
         throw new Error(
           `Binance API error: ${response.status} ${response.statusText}`

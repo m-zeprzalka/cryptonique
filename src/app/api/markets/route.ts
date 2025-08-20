@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { cryptoProviderManager } from "@/lib/crypto-provider-manager"
+import { binanceService } from "@/lib/binance-service"
 import { improvedPredict } from "@/lib/predict"
 
 // Next.js requires this to be a literal for static analysis
@@ -38,13 +38,19 @@ export async function GET(req: NextRequest) {
   try {
     // Get provider status for debug info
     if (debug) {
-      providerStatus = await cryptoProviderManager.getProviderStatus()
+      const isAvailable = await binanceService.isAvailable()
+      providerStatus = [
+        {
+          name: "Binance",
+          available: isAvailable,
+          lastChecked: new Date().toISOString(),
+        },
+      ]
     }
 
-    // Fetch market data with automatic fallback
-    const marketResult = await cryptoProviderManager.getMarkets(perPage)
-    const markets = marketResult.data
-    usedProvider = marketResult.provider
+    // Fetch market data from Binance only
+    const markets = await binanceService.getMarkets(perPage)
+    usedProvider = "binance"
 
     if (markets.length === 0) {
       console.error("[api/markets] No data from any provider - API failure")
@@ -89,20 +95,18 @@ export async function GET(req: NextRequest) {
       const batchResults = await Promise.allSettled(
         batch.map(async (market) => {
           try {
-            // Get historical data with fallback
-            const historyResult = await cryptoProviderManager.getHistory(
-              market.id,
-              hours
-            )
-            const history = historyResult.data
+            // Get historical data from Binance
+            const history = await binanceService.getHistory(market.id, hours)
 
             console.log(
-              `[api/markets] History for ${market.symbol}: ${history.length} points from ${historyResult.provider}`
+              `[api/markets] History for ${market.symbol}: ${history.length} points from Binance`
             )
 
             // Filter recent data points
             const cutoff = Date.now() - hours * 60 * 60 * 1000
-            const recentHistory = history.filter((point) => point.t >= cutoff)
+            const recentHistory = history.filter(
+              (point: { t: number; price: number }) => point.t >= cutoff
+            )
 
             // Generate predictions if we have historical data
             const predictions =
