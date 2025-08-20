@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import useSWR from "swr"
+import { REFRESH_MS } from "@/lib/config"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -44,7 +45,7 @@ export function ClientHome() {
   const { data, isLoading, error } = useSWR(
     `/api/markets?vs=usd&h=${h}&i=${interval}&n=10`,
     fetcher,
-    { refreshInterval: 120_000 }
+    { refreshInterval: REFRESH_MS }
   )
 
   const items = useMemo(() => {
@@ -128,26 +129,31 @@ export function ClientHome() {
         <div className="text-sm text-muted-foreground">Brak wyników.</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((it) => (
-            <CryptoCard
-              key={it.id}
-              data={{
-                symbol: it.symbol,
-                name: it.name,
-                points: [
-                  ...it.series
-                    .slice(0, -6)
-                    .map((p) => ({ t: p.t, price: p.price })),
-                  ...it.series.slice(-6).map((p) => ({
-                    t: p.t,
-                    price: Number.NaN,
-                    predicted: p.price,
-                  })),
-                ],
-                changePct: Math.round((it.change24h ?? 0) * 10) / 10,
-              }}
-            />
-          ))}
+          {items.map((it) => {
+            return (
+              <CryptoCard
+                key={it.id}
+                data={{
+                  symbol: it.symbol,
+                  name: it.name,
+                  livePrice: it.price,
+                  points: [
+                    ...it.series
+                      .slice(0, -(data?.predictedSteps ?? 6))
+                      .map((p) => ({ t: p.t, price: p.price })),
+                    ...it.series
+                      .slice(-(data?.predictedSteps ?? 6))
+                      .map((p) => ({
+                        t: p.t,
+                        price: Number.NaN,
+                        predicted: p.price,
+                      })),
+                  ],
+                  changePct: it.change24h ?? 0,
+                }}
+              />
+            )
+          })}
         </div>
       )}
     </section>

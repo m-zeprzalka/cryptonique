@@ -1,83 +1,46 @@
 import {
   ArrowRight,
   LineChart,
-  Zap,
-  Shield,
-  Activity,
   Sparkles,
   Layers,
   Cpu,
+  Shield,
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { HeroLiveFeed } from "./hero-live-feed"
-import { CryptoCard, SeriesData } from "../crypto/crypto-card"
-import { improvedPredict } from "@/lib/predict"
-import { getHistoryCC, getMarketsCC } from "@/lib/coincap"
-import { getMarketsCP } from "@/lib/coinpaprika"
+import { CryptoCard } from "../crypto/crypto-card"
+import { REVALIDATE_SECONDS } from "@/lib/config"
+import { headers } from "next/headers"
 
 // HERO z poprawionymi animacjami i czystą strukturą
 export async function Hero() {
-  // Server-side prepare single BTC card
-  let btcCard: SeriesData | null = null
+  // Server-side: fetch 4 items from our API and render 4 standard CryptoCards
+  let cards: Array<{
+    id: string
+    symbol: string
+    name?: string
+    price: number
+    change24h: number
+    series: Array<{ t: number; price: number }>
+  }> = []
+  let predictedSteps = 6
   try {
-    // Try CoinCap first
-    let markets: any[] = []
-    try {
-      markets = await getMarketsCC({ perPage: 25 })
-    } catch (err) {
-      if (process.env.NODE_ENV !== "production")
-        console.warn("CoinCap failed, fallback to CoinPaprika", err)
-      try {
-        markets = await getMarketsCP({ perPage: 25 })
-      } catch (err2) {
-        if (process.env.NODE_ENV !== "production")
-          console.error("CoinPaprika fallback also failed", err2)
-      }
-    }
-    const btc = markets.find((m) => m.symbol === "BTC" || m.id === "bitcoin")
-    if (btc) {
-      let recentHist: { t: number; price: number }[] = []
-      try {
-        const hist = await getHistoryCC({ id: btc.id, interval: "m1" })
-        const cutoff = Date.now() - 60 * 60 * 1000
-        recentHist = hist.filter((p) => p.t >= cutoff)
-      } catch (histErr) {
-        if (process.env.NODE_ENV !== "production")
-          console.warn("History fetch failed, using synthetic tail", histErr)
-        const now = Date.now()
-        const base = btc.price
-        recentHist = Array.from({ length: 60 }).map((_, idx) => {
-          const t = now - (59 - idx) * 60 * 1000
-          const noise =
-            (Math.sin(idx / 6) * 0.002 + (Math.random() - 0.5) * 0.0015) * base
-          return { t, price: Math.max(0, base + noise) }
-        })
-      }
-      const pred = improvedPredict(recentHist)
-      const tailCount = 6
-      const merged = [...recentHist, ...pred]
-      const realPart = merged.slice(0, -tailCount)
-      const predTail = merged.slice(-tailCount)
-      const points = [
-        ...realPart.map((p) => ({ t: p.t, price: p.price })),
-        ...predTail.map((p) => ({
-          t: p.t,
-          price: Number.NaN,
-          predicted: p.price,
-        })),
-      ]
-      btcCard = {
-        symbol: btc.symbol,
-        name: (btc as any).name,
-        changePct: Math.round((btc.change24h ?? 0) * 10) / 10,
-        vs: "USD",
-        points,
-      }
+    const h = await headers()
+    const host = h.get("x-forwarded-host") || h.get("host")
+    const proto = h.get("x-forwarded-proto") || "http"
+    const base = host ? `${proto}://${host}` : ""
+    const res = await fetch(`${base}/api/markets?vs=usd&h=1h&i=minutely&n=4`, {
+      next: { revalidate: REVALIDATE_SECONDS },
+    })
+    if (res.ok) {
+      const data = await res.json()
+      cards = (data.items as typeof cards) ?? []
+      predictedSteps = data.predictedSteps ?? 6
     }
   } catch (e) {
     if (process.env.NODE_ENV !== "production")
-      console.error("Hero BTC aggregate fetch failed", e)
+      console.error("Hero fetch /api/markets failed", e)
   }
   return (
     <section
@@ -97,75 +60,39 @@ export async function Hero() {
             <TrustBar />
           </div>
           <div className="xl:col-span-6">
-            {btcCard ? (
-              <CryptoCard data={btcCard} />
+            {cards.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {cards.map((it) => (
+                  <CryptoCard
+                    key={it.id}
+                    data={{
+                      symbol: it.symbol,
+                      name: it.name,
+                      livePrice: it.price,
+                      points: [
+                        ...it.series
+                          .slice(0, -predictedSteps)
+                          .map((p) => ({ t: p.t, price: p.price })),
+                        ...it.series.slice(-predictedSteps).map((p) => ({
+                          t: p.t,
+                          price: Number.NaN,
+                          predicted: p.price,
+                        })),
+                      ],
+                      changePct: it.change24h ?? 0,
+                    }}
+                  />
+                ))}
+              </div>
             ) : (
               <div className="rounded-lg border p-6 text-sm text-muted-foreground">
-                Ładowanie danych BTC...
+                Brak danych z API.
               </div>
             )}
           </div>
         </div>
       </div>
     </section>
-  )
-}
-
-// ----- Stat & Sparkline -----
-function HeroStat({
-  label,
-  value,
-  hint,
-}: {
-  label: string
-  value: string
-  hint: string
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80 font-medium">
-        {label}
-      </span>
-      <span className="text-lg font-semibold tabular-nums tracking-tight">
-        {value}
-      </span>
-      <span className="text-[10px] text-muted-foreground leading-none">
-        {hint}
-      </span>
-    </div>
-  )
-}
-
-function MiniSparkline() {
-  return (
-    <div className="h-20 w-full flex items-center justify-center">
-      <svg viewBox="0 0 140 44" className="w-full h-full overflow-visible">
-        <defs>
-          <linearGradient id="sparkGrad" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="var(--chart-2)" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="var(--chart-1)" stopOpacity="0.9" />
-          </linearGradient>
-          <linearGradient id="sparkFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="var(--chart-2)" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="var(--chart-2)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path
-          d="M0 30 L10 26 L20 29 L30 19 L40 23 L50 11 L60 16 L70 9 L80 18 L90 13 L100 20 L110 15 L120 23 L130 19 L140 26"
-          fill="none"
-          stroke="url(#sparkGrad)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          className="[stroke-dasharray:500] [stroke-dashoffset:500] motion-safe:animate-[dash_2.8s_cubic-bezier(.7,.05,.25,1)_forwards]"
-        />
-        <path
-          d="M0 30 L10 26 L20 29 L30 19 L40 23 L50 11 L60 16 L70 9 L80 18 L90 13 L100 20 L110 15 L120 23 L130 19 L140 26 V44 H0 Z"
-          fill="url(#sparkFill)"
-          className="opacity-60"
-        />
-        <style>{`@keyframes dash { to { stroke-dashoffset: 0; } }`}</style>
-      </svg>
-    </div>
   )
 }
 

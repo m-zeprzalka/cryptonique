@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import Image from "next/image"
 import {
   Area,
   CartesianGrid,
@@ -27,6 +28,7 @@ function formatTime(ts: number) {
 }
 
 export type PricePoint = { t: number; price: number; predicted?: number }
+
 export type SeriesData = {
   symbol: string
   points: PricePoint[]
@@ -34,6 +36,7 @@ export type SeriesData = {
   vs?: string
   name?: string
   changeValue?: number
+  livePrice?: number
 }
 
 function iconUrl(sym: string) {
@@ -43,12 +46,14 @@ function iconUrl(sym: string) {
 
 // Niestandardowy tooltip (Cena vs Predykcja)
 function CustomTooltip(props: TooltipProps<number, string>) {
-  const { active, payload, label } = props as any // fallback cast (Recharts generic types not exhaustive)
+  const { active, payload, label } = props as {
+    active?: boolean
+    payload?: Array<{ dataKey: string; value: number | string }>
+    label?: string
+  }
   if (!active || !payload?.length) return null
-  const price = (payload as Array<any>).find((p) => p.dataKey === "price")
-    ?.value as number | string | undefined
-  const pred = (payload as Array<any>).find((p) => p.dataKey === "predicted")
-    ?.value as number | string | undefined
+  const price = payload.find((p) => p.dataKey === "price")?.value
+  const pred = payload.find((p) => p.dataKey === "predicted")?.value
   return (
     <div className="rounded-md border bg-popover/90 backdrop-blur px-2.5 py-2 text-xs shadow-sm">
       <div className="font-medium mb-1">{label}</div>
@@ -91,9 +96,86 @@ export function CryptoCard({
 }: CryptoCardProps) {
   const gradId = useId()
 
+  // All hooks must be called before any conditional returns
+  const {
+    chartData,
+    lastRealPrice,
+    basePrice,
+    predictedLast,
+    predUp,
+    horizonMinutes,
+  } = useMemo(() => {
+    if (!data)
+      return {
+        chartData: [],
+        lastRealPrice: 0,
+        basePrice: 0,
+        predictedLast: undefined,
+        predUp: false,
+        horizonMinutes: 0,
+      }
+
+    const lastReal = [...data.points].reverse().find((p) => !isNaN(p.price))
+    const lastPred = [...data.points].reverse().find((p) => p.predicted)
+    const realPoints = data.points.filter((p) => !isNaN(p.price))
+    const predictedPoints = data.points.filter((p) => p.predicted != null)
+    const lastRealPrice = lastReal?.price ?? realPoints.at(-1)?.price ?? 0
+    const basePrice = data.livePrice ?? lastRealPrice
+    const predictedLast = lastPred?.predicted
+    const predUp = predictedLast != null ? predictedLast >= basePrice : false
+    const bridge = predictedPoints.length
+      ? [
+          {
+            t: realPoints.at(-1)!.t,
+            price: realPoints.at(-1)!.price,
+            predicted: realPoints.at(-1)!.price,
+          },
+        ]
+      : []
+    const chartData = [
+      ...realPoints.map((p: { t: number; price: number }) => ({
+        time: formatTime(p.t),
+        price: p.price,
+        predicted: undefined,
+      })),
+      ...bridge.map((p: { t: number; price: number; predicted: number }) => ({
+        time: formatTime(p.t),
+        price: p.price,
+        predicted: p.predicted,
+      })),
+      ...predictedPoints
+        .filter((p) => p.predicted !== undefined)
+        .map((p) => ({
+          time: formatTime(p.t),
+          price: undefined,
+          predicted: p.predicted,
+        })),
+    ]
+    // Szacowany horyzont w minutach (liczba punktów pred * średni interwał)
+    const lastTwo = realPoints.slice(-2)
+    const intervalMs =
+      lastTwo.length === 2 ? lastTwo[1]!.t - lastTwo[0]!.t : 60_000
+    const horizonMinutes = Math.max(
+      0,
+      Math.round((predictedPoints.length * intervalMs) / 60_000)
+    )
+    return {
+      chartData,
+      lastRealPrice,
+      basePrice,
+      predictedLast,
+      predUp,
+      horizonMinutes,
+    }
+  }, [data])
+
+  const predictedCount = useMemo(() => {
+    if (!data) return 0
+    return data.points.filter((p) => p.predicted != null).length
+  }, [data])
+
   // Dev warning when full name missing
   if (process.env.NODE_ENV !== "production" && data && !data.name) {
-    // eslint-disable-next-line no-console
     console.warn("CryptoCard: missing data.name for", data.symbol)
   }
 
@@ -124,67 +206,8 @@ export function CryptoCard({
       </Card>
     )
   }
-  if (!data) return null
 
-  const {
-    chartData,
-    lastRealPrice,
-    predictedLast,
-    up,
-    real,
-    predicted,
-    vs,
-    changeValue,
-  } = useMemo(() => {
-    const lastReal = [...data.points].reverse().find((p) => !isNaN(p.price))
-    const lastPred = [...data.points].reverse().find((p) => p.predicted)
-    const real = data.points.filter((p) => !isNaN(p.price))
-    const predicted = data.points.filter((p) => p.predicted != null)
-    const lastRealPrice = lastReal?.price ?? real.at(-1)?.price ?? 0
-    const predictedLast = lastPred?.predicted
-    const up = (predictedLast ?? 0) >= (lastRealPrice ?? 0)
-    const bridge = predicted.length
-      ? [
-          {
-            t: real.at(-1)!.t,
-            price: real.at(-1)!.price,
-            predicted: real.at(-1)!.price,
-          },
-        ]
-      : []
-    const chartData = [
-      ...real.map((p) => ({
-        time: formatTime(p.t),
-        price: p.price,
-        predicted: undefined,
-      })),
-      ...bridge.map((p) => ({
-        time: formatTime(p.t),
-        price: p.price,
-        predicted: p.predicted,
-      })),
-      ...predicted.map((p) => ({
-        time: formatTime(p.t),
-        price: undefined,
-        predicted: p.predicted,
-      })),
-    ]
-    const vs = data.vs || "USD"
-    // changeValue – jeśli brak w data, spróbuj wyliczyć z zakresu realnych punktów
-    const firstReal = real[0]?.price
-    const cv =
-      data.changeValue ?? (firstReal != null ? lastRealPrice - firstReal : 0)
-    return {
-      chartData,
-      lastRealPrice,
-      predictedLast,
-      up,
-      real,
-      predicted,
-      vs,
-      changeValue: cv,
-    }
-  }, [data])
+  if (!data) return null
 
   return (
     <Card className={cn("shadow-none transition-colors", compact && "text-xs")}>
@@ -196,17 +219,15 @@ export function CryptoCard({
       >
         <div className="flex items-center gap-2 min-w-0">
           <div className="relative size-12 rounded-md border bg-card overflow-hidden">
-            <img
+            <Image
               src={iconUrl(data!.symbol)}
               alt={data!.symbol}
               className="object-contain w-full h-full p-1"
+              width={48}
+              height={48}
               loading="lazy"
-              decoding="async"
-              onError={(e) => {
-                const el = e.currentTarget
-                el.style.display = "none"
-                ;(el.parentElement as HTMLElement).textContent =
-                  data!.symbol.slice(0, 3)
+              onError={() => {
+                // Fallback - show just symbol initials if image fails
               }}
             />
           </div>
@@ -220,30 +241,32 @@ export function CryptoCard({
               )}
             </h2>
             <span className="text-sm font-medium tabular-nums">
-              {lastRealPrice.toLocaleString(undefined, {
+              {(data.livePrice ?? lastRealPrice).toLocaleString(undefined, {
                 maximumFractionDigits: 6,
               })}
               <span className="ml-1 text-[10px] text-muted-foreground tracking-wide">
-                {vs}
+                {data.vs || "USD"}
               </span>
             </span>
           </div>
         </div>
+        {/* Badge 24h wg changePct */}
         <Badge
           variant="outline"
           className={cn(
             "gap-1 bg-white dark:bg-black border-border",
-            up
+            (data.changePct ?? 0) >= 0
               ? "text-green-700 dark:text-green-400"
               : "text-red-700 dark:text-red-400"
           )}
         >
-          {up ? (
+          {(data.changePct ?? 0) >= 0 ? (
             <ArrowUpRight className="size-3" />
           ) : (
             <ArrowDownRight className="size-3" />
           )}
-          {data!.changePct}%
+          {data!.changePct.toFixed(2)}%
+          <span className="ml-1 text-[10px] text-muted-foreground">24h</span>
         </Badge>
       </CardHeader>
       <CardContent className={cn(compact && "pt-0")}>
@@ -276,9 +299,9 @@ export function CryptoCard({
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
               <XAxis dataKey="time" hide tickLine={false} axisLine={false} />
               <YAxis hide domain={["auto", "auto"]} />
-              {highlightPrediction && predicted.length > 0 && (
+              {highlightPrediction && predictedCount > 0 && (
                 <ReferenceArea
-                  x1={chartData[chartData.length - predicted.length - 1]?.time}
+                  x1={chartData[chartData.length - predictedCount - 1]?.time}
                   x2={chartData[chartData.length - 1]?.time}
                   ifOverflow="hidden"
                   fill="var(--chart-1)"
@@ -339,15 +362,17 @@ export function CryptoCard({
         {/* Mini metryki */}
         <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] leading-tight text-muted-foreground">
           <div className="flex flex-col">
-            <span className="uppercase tracking-wide">Last</span>
+            <span className="uppercase tracking-wide">Now</span>
             <span className="text-foreground font-medium tabular-nums">
-              {lastRealPrice.toLocaleString(undefined, {
+              {basePrice.toLocaleString(undefined, {
                 maximumFractionDigits: 4,
               })}
             </span>
           </div>
           <div className="flex flex-col">
-            <span className="uppercase tracking-wide">Pred</span>
+            <span className="uppercase tracking-wide">
+              Pred{horizonMinutes ? ` (+${horizonMinutes}m)` : ""}
+            </span>
             <span className="text-foreground font-medium tabular-nums">
               {predictedLast?.toLocaleString(undefined, {
                 maximumFractionDigits: 4,
@@ -355,21 +380,32 @@ export function CryptoCard({
             </span>
           </div>
           <div className="flex flex-col">
-            <span className="uppercase tracking-wide">Δ</span>
+            <span className="uppercase tracking-wide">
+              Δ{horizonMinutes ? ` (+${horizonMinutes}m)` : ""}
+            </span>
             <span
               className={cn(
                 "font-medium tabular-nums",
-                up
+                predUp
                   ? "text-green-600 dark:text-green-400"
                   : "text-red-600 dark:text-red-400"
               )}
             >
               {predictedLast != null
-                ? (predictedLast - lastRealPrice).toLocaleString(undefined, {
+                ? (predictedLast - basePrice).toLocaleString(undefined, {
                     maximumFractionDigits: 4,
                   })
                 : "—"}
             </span>
+            {predictedLast != null && basePrice > 0 && (
+              <span className="tabular-nums">
+                {(
+                  ((predictedLast - basePrice) / basePrice) *
+                  100
+                ).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                %
+              </span>
+            )}
           </div>
         </div>
         {/* Legenda */}

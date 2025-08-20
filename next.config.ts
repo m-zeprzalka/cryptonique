@@ -1,7 +1,24 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  // Optymalizacja obrazów
+  images: {
+    formats: ["image/webp", "image/avif"],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "assets.coincap.io",
+        port: "",
+        pathname: "/assets/icons/**",
+      },
+    ],
+  },
 
-export default nextConfig;
+  // Konfiguracja kompresji
+  compress: true,
+
+  // Optymalizacja performance
+  poweredByHeader: false,
+}
+
+export default nextConfig
