@@ -21,7 +21,10 @@ export const API_CONFIG = {
   MAX_RETRIES: 3,
 
   /** Binance API base URL */
-  BINANCE_BASE: "https://api.binance.com/api/v3",
+  BINANCE_BASE: process.env.BINANCE_API_URL || "https://api.binance.com/api/v3",
+  
+  /** CoinGecko API Key (optional) */
+  COINGECKO_API_KEY: process.env.COINGECKO_API_KEY || null,
 } as const
 
 /** Application environment helpers */

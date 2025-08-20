@@ -8,6 +8,7 @@ import { CryptoAsset, HistoryPoint } from "./binance-service"
 
 class CoinGeckoService {
   private readonly baseUrl = "https://api.coingecko.com/api/v3"
+  private readonly apiKey = API_CONFIG.COINGECKO_API_KEY
 
   /** Mapping from our symbols to CoinGecko IDs */
   private readonly symbolToId: Record<string, string> = {
@@ -21,6 +22,20 @@ class CoinGeckoService {
     AVAX: "avalanche-2",
     DOT: "polkadot",
     LINK: "chainlink",
+  }
+
+  /** Get headers for API requests */
+  private getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "User-Agent": "Cryptonique/1.0",
+    }
+
+    if (this.apiKey) {
+      headers["x-cg-demo-api-key"] = this.apiKey
+    }
+
+    return headers
   }
 
   /** Get CoinGecko ID from symbol */
@@ -54,7 +69,9 @@ class CoinGeckoService {
       const symbols = Object.keys(this.symbolToId).slice(0, perPage)
       const ids = symbols.map((s) => this.getCoinId(s)).join(",")
 
-      console.log(`[CoinGeckoService] Fetching markets for symbols: ${symbols.join(', ')}`)
+      console.log(
+        `[CoinGeckoService] Fetching markets for symbols: ${symbols.join(", ")}`
+      )
       console.log(`[CoinGeckoService] Using CoinGecko IDs: ${ids}`)
 
       const controller = new AbortController()
@@ -78,7 +95,9 @@ class CoinGeckoService {
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        console.error(`[CoinGeckoService] API error: ${response.status} ${response.statusText}`)
+        console.error(
+          `[CoinGeckoService] API error: ${response.status} ${response.statusText}`
+        )
         throw new Error(
           `CoinGecko API error: ${response.status} ${response.statusText}`
         )
@@ -98,16 +117,18 @@ class CoinGeckoService {
         .map((symbol) => {
           const id = this.getCoinId(symbol)
           const coinData = data[id]
-          
+
           if (!coinData) {
             console.warn(`[CoinGeckoService] No data for ${symbol} (${id})`)
             return null
           }
-          
+
           const price = coinData.usd || 0
           const change24h = coinData.usd_24h_change || 0
 
-          console.log(`[CoinGeckoService] ${symbol}: $${price} (${change24h.toFixed(2)}%)`)
+          console.log(
+            `[CoinGeckoService] ${symbol}: $${price} (${change24h.toFixed(2)}%)`
+          )
 
           return {
             id: symbol.toLowerCase(),
@@ -142,9 +163,11 @@ class CoinGeckoService {
       // Convert our symbol to CoinGecko ID
       const symbol = id.toUpperCase()
       const coinId = this.getCoinId(symbol)
-      
-      console.log(`[CoinGeckoService] Getting history for ${symbol} -> ${coinId}, ${hours}h`)
-      
+
+      console.log(
+        `[CoinGeckoService] Getting history for ${symbol} -> ${coinId}, ${hours}h`
+      )
+
       const days = hours <= 24 ? 1 : Math.ceil(hours / 24)
 
       const controller = new AbortController()
@@ -168,7 +191,9 @@ class CoinGeckoService {
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        console.error(`[CoinGeckoService] API error: ${response.status} ${response.statusText}`)
+        console.error(
+          `[CoinGeckoService] API error: ${response.status} ${response.statusText}`
+        )
         throw new Error(
           `CoinGecko history API error: ${response.status} ${response.statusText}`
         )
@@ -178,7 +203,9 @@ class CoinGeckoService {
         prices: [number, number][]
       }
 
-      console.log(`[CoinGeckoService] Raw prices length: ${data.prices?.length || 0}`)
+      console.log(
+        `[CoinGeckoService] Raw prices length: ${data.prices?.length || 0}`
+      )
 
       if (!data.prices || data.prices.length === 0) {
         console.warn(`[CoinGeckoService] No price data for ${coinId}`)

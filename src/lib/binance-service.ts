@@ -79,31 +79,40 @@ class BinanceService {
    */
   async getMarkets(perPage = 10): Promise<CryptoAsset[]> {
     try {
+      console.log(`[BinanceService] Starting getMarkets, perPage: ${perPage}`)
+      
       // Use targeted symbol query to get specific cryptocurrencies
       const symbolsQuery = this.supportedSymbols
         .slice(0, Math.min(perPage * 2, this.supportedSymbols.length))
         .map((s) => `"${s}"`)
         .join(",")
 
+      console.log(`[BinanceService] Symbols query: ${symbolsQuery}`)
+
       // Create manual timeout for Vercel compatibility
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT)
 
-      const response = await fetch(
-        `${this.baseUrl}/ticker/24hr?symbols=[${symbolsQuery}]`,
-        {
-          next: { revalidate: 30 }, // Cache for 30 seconds
-          signal: controller.signal,
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "Cryptonique/1.0",
-          },
-        }
-      )
+      const url = `${this.baseUrl}/ticker/24hr?symbols=[${symbolsQuery}]`
+      console.log(`[BinanceService] Fetching from: ${url}`)
+
+      const response = await fetch(url, {
+        next: { revalidate: 30 }, // Cache for 30 seconds
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Cryptonique/1.0",
+          "Cache-Control": "no-cache",
+        },
+      })
 
       clearTimeout(timeoutId)
 
+      console.log(`[BinanceService] Response: ${response.status} ${response.statusText}`)
+
       if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unable to read error body')
+        console.error(`[BinanceService] Error details:`, errorText)
         throw new Error(
           `Binance API error: ${response.status} ${response.statusText}`
         )
