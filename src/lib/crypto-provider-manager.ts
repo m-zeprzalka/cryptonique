@@ -67,10 +67,14 @@ class CryptoProviderManager {
         console.log(`[ProviderManager] Trying ${provider.name}...`)
         const data = await provider.getMarkets(perPage)
 
+        console.log(`[ProviderManager] ${provider.name} returned ${data.length} items`)
+
         if (data.length > 0) {
           console.log(`[ProviderManager] Successfully used ${provider.name}`)
           this.lastSuccessfulProvider = provider.name
           return { data, provider: provider.name }
+        } else {
+          console.warn(`[ProviderManager] ${provider.name} returned empty data`)
         }
       } catch (error) {
         console.warn(`[ProviderManager] ${provider.name} failed:`, error)
