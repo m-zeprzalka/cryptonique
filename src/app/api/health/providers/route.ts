@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { cryptoProviderManager } from "@/lib/crypto-provider-manager"
+import { binanceService } from "@/lib/binance-service"
 
 export const revalidate = 0
 
@@ -20,25 +20,20 @@ export async function OPTIONS() {
 
 export async function GET() {
   try {
-    const providerStatus = await cryptoProviderManager.getProviderStatus()
+    const isAvailable = await binanceService.isAvailable()
     const timestamp = new Date().toISOString()
-
-    // Determine overall health
-    const anyAvailable = providerStatus.some((p) => p.available)
-    const allAvailable = providerStatus.every((p) => p.available)
 
     const response = NextResponse.json({
       timestamp,
-      overallStatus: anyAvailable
-        ? allAvailable
-          ? "healthy"
-          : "degraded"
-        : "unhealthy",
-      providers: providerStatus,
+      overallStatus: isAvailable ? "healthy" : "unhealthy",
+      provider: {
+        name: "Binance",
+        available: isAvailable,
+        lastChecked: timestamp,
+      },
       summary: {
-        total: providerStatus.length,
-        available: providerStatus.filter((p) => p.available).length,
-        unavailable: providerStatus.filter((p) => !p.available).length,
+        service: "Binance API",
+        status: isAvailable ? "operational" : "down",
       },
     })
 
@@ -53,7 +48,7 @@ export async function GET() {
       {
         timestamp: new Date().toISOString(),
         overallStatus: "error",
-        error: "Failed to check provider status",
+        error: "Failed to check Binance API status",
         details: String(error),
       },
       { status: 500 }

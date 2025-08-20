@@ -22,7 +22,7 @@ export interface HistoryPoint {
  * Simple Binance service for cryptocurrency data
  */
 class BinanceService {
-  private readonly baseUrl = "https://api.binance.com/api/v3"
+  private readonly baseUrl = API_CONFIG.BINANCE_BASE
 
   /** Top crypto symbols supported by Binance */
   private readonly supportedSymbols = [
