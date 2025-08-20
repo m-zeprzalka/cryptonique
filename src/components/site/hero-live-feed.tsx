@@ -1,41 +1,56 @@
 "use client"
 import * as React from "react"
+import useSWR from "swr"
 
-type TItem = { symbol: string; change: string }
+type TItem = { symbol: string; change: string; price?: number }
 
-const BASE: TItem[] = [
-  { symbol: "BTC", change: "+1.2%" },
-  { symbol: "ETH", change: "+0.6%" },
-  { symbol: "SOL", change: "+2.4%" },
-  { symbol: "XRP", change: "-0.3%" },
-  { symbol: "DOGE", change: "+4.1%" },
-  { symbol: "ADA", change: "+0.9%" },
-]
+const fetcher = async (url: string) => {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error('Failed to fetch')
+  return response.json()
+}
 
 export function HeroLiveFeed() {
-  const [items, setItems] = React.useState<TItem[]>(BASE)
+  const { data, error } = useSWR('/api/markets?vs=usd&h=1h&i=minutely&n=6', fetcher, {
+    refreshInterval: 30000, // Refresh every 30 seconds
+    revalidateOnFocus: false
+  })
+
   const prefersReduced =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
-  // Co pewien czas tylko aktualizujemy procenty (bez zmiany kolejności)
-  React.useEffect(() => {
-    if (prefersReduced) return
-    const id = setInterval(() => {
-      setItems((prev) =>
-        prev.map((it) => {
-          const sign = Math.random() > 0.5 ? 1 : -1
-          // lekko ważone mniejsze zmiany
-          const val = (Math.random() * (sign > 0 ? 3.2 : 2.6)).toFixed(1)
-          return { ...it, change: `${sign > 0 ? "+" : "-"}${val}%` }
-        })
-      )
-    }, 3500)
-    return () => clearInterval(id)
-  }, [prefersReduced])
+  // Create items from real API data or fallback
+  const items: TItem[] = React.useMemo(() => {
+    if (data?.items && data.items.length > 0) {
+      return data.items.slice(0, 6).map((item: {
+        symbol: string
+        change24h: number
+        price: number
+      }) => ({
+        symbol: item.symbol,
+        change: `${item.change24h >= 0 ? '+' : ''}${item.change24h.toFixed(1)}%`,
+        price: item.price
+      }))
+    }
+    
+    // Fallback data if API fails
+    return [
+      { symbol: "BTC", change: "+1.2%" },
+      { symbol: "ETH", change: "+0.6%" },
+      { symbol: "SOL", change: "+2.4%" },
+      { symbol: "XRP", change: "-0.3%" },
+      { symbol: "DOGE", change: "+4.1%" },
+      { symbol: "ADA", change: "+0.9%" },
+    ]
+  }, [data])
 
   // Duplikujemy listę do płynnej pętli
   const loop = items.concat(items)
+
+  if (error) {
+    console.warn('Hero live feed API error:', error)
+  }
 
   return (
     <div className="relative overflow-hidden rounded-lg border bg-background/60 backdrop-blur px-3 py-2 text-xs font-mono">
@@ -70,6 +85,11 @@ export function HeroLiveFeed() {
               >
                 {it.change}
               </span>
+              {it.price && (
+                <span className="text-muted-foreground/70 ml-1">
+                  ${it.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+              )}
             </li>
           )
         })}

@@ -8,50 +8,6 @@ export const revalidate = 30
 // Vercel edge runtime compatibility
 export const runtime = "nodejs"
 
-/**
- * Generate synthetic historical data for charts when real data is unavailable
- */
-function generateSyntheticHistory(
-  currentPrice: number,
-  hours: number
-): Array<{ t: number; price: number }> {
-  const points: Array<{ t: number; price: number }> = []
-  const now = Date.now()
-  const intervalMs = hours <= 1 ? 60000 : 300000 // 1min for 1h, 5min for longer
-  const totalPoints = hours <= 1 ? 60 : Math.min(72, hours * 12)
-
-  let price = currentPrice
-
-  for (let i = totalPoints - 1; i >= 0; i--) {
-    const timestamp = now - i * intervalMs
-
-    // Generate realistic price variations (±0.5% per interval)
-    const variation = (Math.random() - 0.5) * 0.01
-    price = price * (1 + variation)
-
-    // Add some trend and noise
-    const trendFactor = Math.sin(i / (totalPoints / 4)) * 0.002
-    const noiseFactor = (Math.random() - 0.5) * 0.003
-    price = price * (1 + trendFactor + noiseFactor)
-
-    // Ensure price stays positive and realistic
-    price = Math.max(price, currentPrice * 0.8)
-    price = Math.min(price, currentPrice * 1.2)
-
-    points.push({
-      t: timestamp,
-      price: parseFloat(price.toFixed(8)),
-    })
-  }
-
-  // Ensure the last point matches current price
-  if (points.length > 0) {
-    points[points.length - 1]!.price = currentPrice
-  }
-
-  return points
-}
-
 // Handle CORS preflight requests
 export async function OPTIONS() {
   return new NextResponse(null, {
@@ -91,33 +47,18 @@ export async function GET(req: NextRequest) {
     usedProvider = marketResult.provider
 
     if (markets.length === 0) {
-      // Use fallback synthetic data as last resort
-      console.warn("[api/markets] No data from providers, using fallback data")
-      const fallbackMarkets =
-        cryptoProviderManager.generateFallbackData(perPage)
-
-      const responseData = {
+      console.error("[api/markets] No data from any provider - API failure")
+      
+      return NextResponse.json({
         vs,
         horizon,
         interval,
         predictedSteps: 6,
-        items: fallbackMarkets.map((market) => ({
-          id: market.id,
-          symbol: market.symbol,
-          name: market.name,
-          price: market.price,
-          change24h: market.change24h,
-          series: generateSyntheticHistory(market.price, hours), // Generate synthetic chart data
-        })),
-        fallback: true,
-        provider: "synthetic",
-      }
-
-      const response = NextResponse.json(responseData)
-      response.headers.set("Access-Control-Allow-Origin", "*")
-      response.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")
-      response.headers.set("Access-Control-Allow-Headers", "Content-Type")
-      return response
+        items: [],
+        error: "No cryptocurrency data available from any provider",
+        fallback: false,
+        provider: "none",
+      }, { status: 503 }) // Service Unavailable
     }
 
     console.log(
@@ -160,21 +101,20 @@ export async function GET(req: NextRequest) {
             const cutoff = Date.now() - hours * 60 * 60 * 1000
             const recentHistory = history.filter((point) => point.t >= cutoff)
 
-            // If no historical data, generate synthetic series for chart visualization
-            let finalHistory = recentHistory
+            // Skip currencies without historical data - we want only real data
             if (recentHistory.length === 0) {
               console.log(
-                `[api/markets] No history for ${market.symbol}, generating synthetic data`
+                `[api/markets] Skipping ${market.symbol} - no historical data available`
               )
-              finalHistory = generateSyntheticHistory(market.price, hours)
+              return null
             }
 
             // Generate predictions if we have historical data
             const predictions =
-              finalHistory.length > 0 ? improvedPredict(finalHistory) : []
+              recentHistory.length > 0 ? improvedPredict(recentHistory) : []
 
             console.log(
-              `[api/markets] ${market.symbol}: ${finalHistory.length} history + ${predictions.length} predictions`
+              `[api/markets] ${market.symbol}: ${recentHistory.length} history + ${predictions.length} predictions`
             )
 
             return {
@@ -183,7 +123,7 @@ export async function GET(req: NextRequest) {
               name: market.name,
               price: market.price,
               change24h: market.change24h,
-              series: [...finalHistory, ...predictions],
+              series: [...recentHistory, ...predictions],
             }
           } catch (error) {
             console.warn(
@@ -203,9 +143,9 @@ export async function GET(req: NextRequest) {
         })
       )
 
-      // Collect successful results
+      // Collect successful results (skip null values)
       for (const result of batchResults) {
-        if (result.status === "fulfilled") {
+        if (result.status === "fulfilled" && result.value !== null) {
           results.push(result.value)
         }
       }
@@ -257,29 +197,16 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("[api/markets] Error:", error)
 
-    // Determine hours for fallback data
-    const hours = horizon === "6h" ? 6 : horizon === "3h" ? 3 : 1
-
-    // Fallback to synthetic data on complete failure
-    console.warn("[api/markets] Complete failure, using synthetic fallback")
-    const fallbackMarkets = cryptoProviderManager.generateFallbackData(perPage)
-
+    // Return error response without fallback data
     const errorResponse = {
       vs,
       horizon,
       interval,
       predictedSteps: 6,
-      items: fallbackMarkets.map((market) => ({
-        id: market.id,
-        symbol: market.symbol,
-        name: market.name,
-        price: market.price,
-        change24h: market.change24h,
-        series: generateSyntheticHistory(market.price, hours),
-      })),
+      items: [],
       error: error instanceof Error ? error.message : "Unknown error",
-      fallback: true,
-      provider: "synthetic",
+      fallback: false,
+      provider: "none",
     }
 
     if (debug) {
