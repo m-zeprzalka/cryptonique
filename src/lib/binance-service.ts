@@ -77,13 +77,31 @@ class BinanceService {
   /**
    * Fetch current market data from Binance
    */
-  async getMarkets(perPage = 10): Promise<CryptoAsset[]> {
+  async getMarkets(
+    perPage = 10,
+    filterSymbol?: string
+  ): Promise<CryptoAsset[]> {
     try {
       console.log(`[BinanceService] Starting getMarkets, perPage: ${perPage}`)
 
+      // NOWE: Jeśli filterSymbol jest podany, znajdź tylko ten symbol
+      let targetSymbols = this.supportedSymbols
+      if (filterSymbol) {
+        const binanceSymbol = this.mapSymbol(filterSymbol.toUpperCase())
+        console.log(
+          `[BinanceService] Filtering for ${filterSymbol} -> ${binanceSymbol}`
+        )
+        targetSymbols = this.supportedSymbols.filter((s) => s === binanceSymbol)
+        console.log(`[BinanceService] Filtered symbols:`, targetSymbols)
+        if (targetSymbols.length === 0) {
+          console.log(`[BinanceService] Symbol ${filterSymbol} not supported`)
+          return []
+        }
+      }
+
       // Use targeted symbol query to get specific cryptocurrencies
-      const symbolsQuery = this.supportedSymbols
-        .slice(0, Math.min(perPage * 2, this.supportedSymbols.length))
+      const symbolsQuery = targetSymbols
+        .slice(0, Math.min(perPage * 2, targetSymbols.length))
         .map((s) => `"${s}"`)
         .join(",")
 
@@ -161,9 +179,23 @@ class BinanceService {
     try {
       const symbol = this.mapSymbol(id)
 
-      // Determine optimal interval based on time range
-      const interval = hours <= 1 ? "1m" : hours <= 6 ? "5m" : "1h"
-      const limit = hours <= 1 ? 60 : hours <= 6 ? 72 : 24
+      // NAPRAWIONA logika interwałów i limitów
+      let interval: string
+      let limit: number
+
+      if (hours <= 1) {
+        // 1h: 60 punktów co 1 minutę = 60 minut
+        interval = "1m"
+        limit = 60
+      } else if (hours <= 3) {
+        // 3h: 36 punktów co 5 minut = 180 minut = 3h
+        interval = "5m"
+        limit = 36
+      } else {
+        // 6h: 72 punkty co 5 minut = 360 minut = 6h
+        interval = "5m"
+        limit = 72
+      }
 
       const url = new URL(`${this.baseUrl}/klines`)
       url.searchParams.set("symbol", symbol)
@@ -209,7 +241,7 @@ class BinanceService {
       >
 
       console.log(
-        `[BinanceService] Fetched ${data.length} history points for ${symbol}`
+        `[BinanceService] Fetched ${data.length} history points for ${symbol} (${hours}h, ${interval}, limit=${limit})`
       )
 
       return data.map((kline) => ({

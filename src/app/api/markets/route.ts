@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
   const horizon = searchParams.get("h") ?? "1h"
   const interval = searchParams.get("i") ?? "minutely"
   const perPage = Number(searchParams.get("n") ?? 10)
+  const symbol = searchParams.get("symbol") // NOWY: filtrowanie po symbolu
   const debug = searchParams.get("debug") === "1"
 
   let usedProvider = "unknown"
@@ -49,7 +50,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch market data from Binance only
-    const markets = await binanceService.getMarkets(perPage)
+    const markets = await binanceService.getMarkets(
+      perPage,
+      symbol || undefined
+    )
     usedProvider = "binance"
 
     if (markets.length === 0) {
@@ -150,13 +154,25 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // NOWE: Filtrowanie po symbolu jeśli został podany
+    let filteredResults = results
+    if (symbol) {
+      filteredResults = results.filter(
+        (result) =>
+          result.symbol.toLowerCase() === symbol.toLowerCase() ||
+          result.symbol.toLowerCase().replace("usdt", "") ===
+            symbol.toLowerCase()
+      )
+    }
+
     const predictedSteps = 6
     const responseData = {
       vs,
       horizon,
       interval,
       predictedSteps,
-      items: results,
+      items: filteredResults,
+      markets: filteredResults, // DODAJEMY alias dla kompatybilności
       provider: usedProvider,
     }
 

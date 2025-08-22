@@ -65,6 +65,7 @@ export async function Hero() {
                 {cards.map((it) => (
                   <CryptoCard
                     key={it.id}
+                    symbol={it.symbol}
                     data={{
                       symbol: it.symbol,
                       name: it.name,

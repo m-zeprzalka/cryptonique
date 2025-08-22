@@ -18,7 +18,6 @@ import {
 import { cn } from "@/lib/utils"
 import { ArrowDownRight, ArrowUpRight } from "lucide-react"
 import { useId, useMemo, useState } from "react"
-import useSWR from "swr"
 
 function formatTime(ts: number) {
   const d = new Date(ts)
@@ -111,7 +110,7 @@ type CryptoCardProps = {
   error?: string
   compact?: boolean
   highlightPrediction?: boolean
-  symbol: string // WYMAGANE - symbol kryptowaluty
+  defaultHorizon?: TimeHorizon
 }
 
 export function CryptoCard({
@@ -120,56 +119,13 @@ export function CryptoCard({
   error,
   compact,
   highlightPrediction = true,
-  symbol,
+  defaultHorizon = "1h",
 }: CryptoCardProps) {
   const gradId = useId()
+  const [selectedHorizon, setSelectedHorizon] =
+    useState<TimeHorizon>(defaultHorizon)
 
-  // Guard - nie renderuj karty bez symbolu
-  if (!symbol) {
-    console.warn("CryptoCard: Missing symbol prop")
-    return null
-  }
-
-  // WŁASNY STAN HORYZONTU dla każdej karty indywidualnie!
-  const [selectedHorizon, setSelectedHorizon] = useState<TimeHorizon>("1h")
-
-  // INDYWIDUALNE ŁADOWANIE DANYCH dla tej karty
-  const { data: cardData, isLoading: cardLoading } = useSWR(
-    symbol
-      ? `/api/markets?vs=usd&h=${selectedHorizon}&i=minutely&n=1&symbol=${symbol}`
-      : null,
-    async (url: string) => {
-      const response = await fetch(url)
-      if (!response.ok) throw new Error("Failed to fetch")
-      const result = await response.json()
-
-      // API może zwrócić markets lub items - użyj pierwszego dostępnego
-      const market = result.markets?.[0] || result.items?.[0]
-      if (!market) return null
-
-      // Konwertuj format API na format oczekiwany przez komponent
-      return {
-        symbol: market.symbol,
-        name: market.name,
-        livePrice: market.price,
-        points: (market.series || []).map((point: any) => ({
-          t: point.t,
-          price: point.price,
-          predicted: point.predicted,
-        })),
-        changePct: market.change24h ?? 0,
-      }
-    },
-    {
-      refreshInterval: 30000, // Odświeżaj co 30 sekund
-      revalidateOnFocus: false,
-    }
-  )
-
-  // Użyj danych z SWR lub fallback na props data
-  const activeData = cardData || data
-
-  // NOWA LOGIKA - 50/50 podział + długoterminowe predykcje
+  // Główna logika przetwarzania danych z PRAWDZIWYM podziałem 50/50
   const {
     chartData,
     predictionStartIndex,
@@ -182,7 +138,7 @@ export function CryptoCard({
     historicalPoints,
     predictionPoints,
   } = useMemo(() => {
-    if (!activeData?.points?.length) {
+    if (!data?.points?.length) {
       return {
         chartData: [],
         predictionStartIndex: 0,
@@ -197,168 +153,102 @@ export function CryptoCard({
       }
     }
 
-    // Konfiguracja horyzontów - PRAWDZIWY 50/50 podział
+    // Separacja danych: historyczne vs predykcje (z API)
+    const historicalData = data.points.filter(
+      (p) => p.predicted == null && !isNaN(p.price)
+    )
+    const predictionData = data.points.filter((p) => p.predicted != null)
+
+    // Konfiguracja horyzontów czasowych dla IDEALNEGO podziału 50/50
     const horizonConfig = {
-      "1h": { historyMinutes: 30, predictionMinutes: 30 }, // 30min + 30min
-      "3h": { historyMinutes: 90, predictionMinutes: 90 }, // 90min + 90min
-      "6h": { historyMinutes: 180, predictionMinutes: 180 }, // 180min + 180min
+      "1h": { maxHistorical: 15, maxPrediction: 15 }, // 15+15 = 30 punktów
+      "3h": { maxHistorical: 20, maxPrediction: 20 }, // 20+20 = 40 punktów
+      "6h": { maxHistorical: 25, maxPrediction: 25 }, // 25+25 = 50 punktów
     }
 
-    const { historyMinutes, predictionMinutes } = horizonConfig[selectedHorizon]
+    const { maxHistorical, maxPrediction } = horizonConfig[selectedHorizon]
 
-    // Separuj istniejące dane
-    const allHistoricalData = activeData.points.filter(
-      (p: PricePoint) => p.predicted == null && !isNaN(p.price)
-    )
-    const existingPredictions = activeData.points.filter(
-      (p: PricePoint) => p.predicted != null
-    )
+    // Wybierz DOKŁADNIE potrzebną liczbę punktów historycznych (ostatnie X punktów)
+    const selectedHistorical = historicalData.slice(-maxHistorical)
 
-    if (allHistoricalData.length === 0) {
-      return {
-        chartData: [],
-        predictionStartIndex: 0,
-        currentPrice: activeData.livePrice || 0,
-        predictedPrice: 0,
-        priceChange: 0,
-        priceChangePercent: 0,
-        predUp: false,
-        totalDataPoints: 0,
-        historicalPoints: 0,
-        predictionPoints: 0,
-      }
+    // Wybierz DOKŁADNIE potrzebną liczbę punktów predykcji (pierwsze X punktów)
+    const selectedPredictions = predictionData.slice(0, maxPrediction)
+
+    // Stwórz tablicę chart data z DOKŁADNYM podziałem 50/50
+    const historicalChartData = selectedHistorical.map((point, index) => ({
+      time: formatTime(point.t),
+      price: point.price,
+      predicted: undefined,
+      segment: "historical" as const,
+      originalIndex: index,
+      timestamp: point.t,
+    }))
+
+    const predictionChartData = selectedPredictions.map((point, index) => ({
+      time: formatTime(point.t),
+      price: undefined,
+      predicted: point.predicted,
+      segment: "prediction" as const,
+      originalIndex: index,
+      timestamp: point.t,
+    }))
+
+    // Punkt przejścia (ostatni historyczny = pierwszy predykcji)
+    const lastHistoricalPrice = selectedHistorical.at(-1)?.price ?? 0
+    const firstPredictionPrice =
+      selectedPredictions.at(0)?.predicted ?? lastHistoricalPrice
+
+    const transitionPoint = {
+      time: formatTime(selectedHistorical.at(-1)?.t ?? Date.now()),
+      price: lastHistoricalPrice,
+      predicted: firstPredictionPrice,
+      segment: "transition" as const,
+      originalIndex: historicalChartData.length,
+      timestamp: selectedHistorical.at(-1)?.t ?? Date.now(),
     }
 
-    const currentTime = Date.now()
-    const currentPrice =
-      activeData.livePrice ||
-      allHistoricalData[allHistoricalData.length - 1]?.price ||
-      0
+    // Finalna tablica chart data z PERFEKCYJNYM podziałem 50/50
+    const chartData = [
+      ...historicalChartData,
+      transitionPoint,
+      ...predictionChartData,
+    ]
 
-    // 1. HISTORIA - ostatnie X minut (lewa połowa wykresu)
-    const historyCutoffTime = currentTime - historyMinutes * 60 * 1000
-    const filteredHistory = allHistoricalData.filter(
-      (p: PricePoint) => p.t >= historyCutoffTime
-    )
+    // Indeks gdzie zaczynają się predykcje (dla ReferenceArea)
+    const predictionStartIndex = historicalChartData.length
 
-    // 2. PREDYKCJE - następne X minut (prawa połowa wykresu)
-    // Generuj punkty predykcji sięgające daleko w przyszłość!
-    const predictionEndTime = currentTime + predictionMinutes * 60 * 1000
-    const predictionIntervalMinutes = Math.max(
-      2,
-      Math.floor(predictionMinutes / 20)
-    ) // 20 punktów predykcji
-    const numberOfPredictions = Math.floor(
-      predictionMinutes / predictionIntervalMinutes
-    )
-
-    // Oblicz trend z ostatnich punktów historycznych
-    let finalPredictedPrice = currentPrice
-    if (filteredHistory.length >= 3) {
-      const recentPoints = filteredHistory.slice(-5) // Ostatnie 5 punktów
-      const priceChanges = recentPoints
-        .slice(1)
-        .map(
-          (point: PricePoint, i: number) => point.price - recentPoints[i].price
-        )
-      const avgChange =
-        priceChanges.reduce((sum: number, change: number) => sum + change, 0) /
-        priceChanges.length
-
-      // Projekcja trendu na przyszłość (z wygładzaniem)
-      const trendMultiplier = predictionMinutes / 60 // Skaluj według długości predykcji
-      finalPredictedPrice = currentPrice + avgChange * trendMultiplier * 5 // 5x wzmocnienie trendu
-    }
-
-    // Jeśli mamy istniejące predykcje, użyj ostatniej
-    if (existingPredictions.length > 0) {
-      finalPredictedPrice =
-        existingPredictions[existingPredictions.length - 1].predicted ||
-        finalPredictedPrice
-    }
-
-    const predUp = finalPredictedPrice >= currentPrice
-
-    // 3. BUDUJ DANE WYKRESU
-    const chartData: Array<{
-      time: string
-      price?: number
-      predicted?: number
-      segment: string
-      timestamp: number
-    }> = []
-
-    // Dodaj przefiltrowaną historię (lewa połowa)
-    filteredHistory.forEach((point: PricePoint) => {
-      chartData.push({
-        time: formatTime(point.t),
-        price: point.price,
-        predicted: undefined,
-        segment: "historical",
-        timestamp: point.t,
-      })
-    })
-
-    // Punkt przejścia (moment obecny)
-    chartData.push({
-      time: formatTime(currentTime),
-      price: currentPrice,
-      predicted: currentPrice,
-      segment: "transition",
-      timestamp: currentTime,
-    })
-
-    // Generuj nowe predykcje (prawa połowa) sięgające daleko w przyszłość
-    for (let i = 1; i <= numberOfPredictions; i++) {
-      const futureTime = currentTime + i * predictionIntervalMinutes * 60 * 1000
-      const progress = i / numberOfPredictions
-
-      // Smooth curve progression
-      const easedProgress = progress * progress * (3 - 2 * progress)
-      const predictedPrice =
-        currentPrice + (finalPredictedPrice - currentPrice) * easedProgress
-
-      chartData.push({
-        time: formatTime(futureTime),
-        price: undefined,
-        predicted: predictedPrice,
-        segment: "prediction",
-        timestamp: futureTime,
-      })
-    }
-
-    const predictionStartIndex = filteredHistory.length
-    const priceChange = finalPredictedPrice - currentPrice
+    // Obliczenia metryki
+    const currentPrice = data.livePrice ?? lastHistoricalPrice
+    const predictedPrice = selectedPredictions.at(-1)?.predicted ?? currentPrice
+    const priceChange = predictedPrice - currentPrice
     const priceChangePercent =
       currentPrice > 0 ? (priceChange / currentPrice) * 100 : 0
+    const predUp = predictedPrice >= currentPrice
 
-    console.log(`[COMPONENT] ${activeData.symbol} ${selectedHorizon}:`, {
-      historical: filteredHistory.length,
-      predictions: numberOfPredictions,
+    console.log(`[PERFECT] ${data.symbol} ${selectedHorizon}:`, {
+      historical: selectedHistorical.length,
+      predictions: selectedPredictions.length,
       total: chartData.length,
+      split: `${selectedHistorical.length}/${selectedPredictions.length}`,
       predictionStartAt: predictionStartIndex,
-      timeRange: `${formatTime(
-        filteredHistory[0]?.t || currentTime
-      )} - ${formatTime(predictionEndTime)}`,
-      note: `50/50 split: ${historyMinutes}min history + ${predictionMinutes}min predictions`,
     })
 
     return {
       chartData,
       predictionStartIndex,
       currentPrice,
-      predictedPrice: finalPredictedPrice,
+      predictedPrice,
       priceChange,
       priceChangePercent,
       predUp,
       totalDataPoints: chartData.length,
-      historicalPoints: filteredHistory.length,
-      predictionPoints: numberOfPredictions,
+      historicalPoints: selectedHistorical.length,
+      predictionPoints: selectedPredictions.length,
     }
-  }, [activeData, selectedHorizon])
+  }, [data, selectedHorizon])
 
   // Loading state z skeleton
-  if (loading || cardLoading) {
+  if (loading) {
     return (
       <Card className={cn("overflow-hidden", compact && "text-xs")}>
         <CardHeader className="pb-3">
@@ -405,7 +295,7 @@ export function CryptoCard({
     )
   }
 
-  if (!activeData) return null
+  if (!data) return null
 
   return (
     <Card
@@ -420,8 +310,8 @@ export function CryptoCard({
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative size-10 rounded-lg border bg-gradient-to-br from-background to-muted/50 overflow-hidden p-1">
               <Image
-                src={iconUrl(activeData.symbol)}
-                alt={activeData.symbol}
+                src={iconUrl(data.symbol)}
+                alt={data.symbol}
                 className="object-contain w-full h-full"
                 width={40}
                 height={40}
@@ -434,7 +324,7 @@ export function CryptoCard({
                   if (parent) {
                     parent.innerHTML = `
                       <div class="w-full h-full flex items-center justify-center text-xs font-bold text-muted-foreground">
-                        ${activeData.symbol.slice(0, 2)}
+                        ${data.symbol.slice(0, 2)}
                       </div>
                     `
                   }
@@ -443,10 +333,10 @@ export function CryptoCard({
             </div>
             <div className="flex flex-col min-w-0">
               <h3 className="font-semibold leading-tight truncate">
-                {activeData.name || activeData.symbol}
-                {activeData.name && (
+                {data.name || data.symbol}
+                {data.name && (
                   <span className="ml-2 text-xs text-muted-foreground font-normal">
-                    {activeData.symbol}
+                    {data.symbol}
                   </span>
                 )}
               </h3>
@@ -465,23 +355,23 @@ export function CryptoCard({
             variant="outline"
             className={cn(
               "gap-1.5 shrink-0",
-              activeData.changePct >= 0
+              data.changePct >= 0
                 ? "text-green-700 dark:text-green-400 border-green-200 dark:border-green-800"
                 : "text-red-700 dark:text-red-400 border-red-200 dark:border-red-800"
             )}
           >
-            {activeData.changePct >= 0 ? (
+            {data.changePct >= 0 ? (
               <ArrowUpRight className="size-3" />
             ) : (
               <ArrowDownRight className="size-3" />
             )}
-            {Math.abs(activeData.changePct).toFixed(2)}%
+            {Math.abs(data.changePct).toFixed(2)}%
           </Badge>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Time Horizon Selector - INDYWIDUALNE PRZYCISKI */}
+        {/* Time Horizon Selector */}
         <div className="flex justify-center">
           <div className="inline-flex rounded-lg border bg-muted/50 p-1">
             {(["1h", "3h", "6h"] as TimeHorizon[]).map((horizon) => (
@@ -604,7 +494,7 @@ export function CryptoCard({
                   strokeWidth={2.5}
                   dot={false}
                   isAnimationActive={false}
-                  connectNulls={true}
+                  connectNulls={false}
                   activeDot={{
                     r: 4,
                     stroke: "rgb(255, 255, 255)",
@@ -622,7 +512,7 @@ export function CryptoCard({
                   strokeDasharray="5 5"
                   dot={false}
                   isAnimationActive={false}
-                  connectNulls={true}
+                  connectNulls={false}
                   activeDot={{
                     r: 4,
                     stroke: "rgb(255, 255, 255)",
