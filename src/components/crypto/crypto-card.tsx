@@ -64,8 +64,12 @@ function CustomTooltip(
   }
   if (!active || !payload?.length) return null
 
-  const priceData = payload.find((p: any) => p.dataKey === "price")
-  const predData = payload.find((p: any) => p.dataKey === "predicted")
+  const priceData = payload.find(
+    (p: { dataKey: string }) => p.dataKey === "price"
+  )
+  const predData = payload.find(
+    (p: { dataKey: string }) => p.dataKey === "predicted"
+  )
 
   return (
     <div className="rounded-lg border bg-background/95 backdrop-blur-sm px-3 py-2 text-xs shadow-lg">
@@ -124,12 +128,6 @@ export function CryptoCard({
 }: CryptoCardProps) {
   const gradId = useId()
 
-  // Guard - nie renderuj karty bez symbolu
-  if (!symbol) {
-    console.warn("CryptoCard: Missing symbol prop")
-    return null
-  }
-
   // WŁASNY STAN HORYZONTU dla każdej karty indywidualnie!
   const [selectedHorizon, setSelectedHorizon] = useState<TimeHorizon>("1h")
 
@@ -152,11 +150,13 @@ export function CryptoCard({
         symbol: market.symbol,
         name: market.name,
         livePrice: market.price,
-        points: (market.series || []).map((point: any) => ({
-          t: point.t,
-          price: point.price,
-          predicted: point.predicted,
-        })),
+        points: (market.series || []).map(
+          (point: { t: number; price: number; predicted?: number }) => ({
+            t: point.t,
+            price: point.price,
+            predicted: point.predicted,
+          })
+        ),
         changePct: market.change24h ?? 0,
       }
     },
@@ -178,7 +178,6 @@ export function CryptoCard({
     priceChange,
     priceChangePercent,
     predUp,
-    totalDataPoints,
     historicalPoints,
     predictionPoints,
   } = useMemo(() => {
@@ -191,7 +190,6 @@ export function CryptoCard({
         priceChange: 0,
         priceChangePercent: 0,
         predUp: false,
-        totalDataPoints: 0,
         historicalPoints: 0,
         predictionPoints: 0,
       }
@@ -223,7 +221,6 @@ export function CryptoCard({
         priceChange: 0,
         priceChangePercent: 0,
         predUp: false,
-        totalDataPoints: 0,
         historicalPoints: 0,
         predictionPoints: 0,
       }
@@ -351,11 +348,16 @@ export function CryptoCard({
       priceChange,
       priceChangePercent,
       predUp,
-      totalDataPoints: chartData.length,
       historicalPoints: filteredHistory.length,
       predictionPoints: numberOfPredictions,
     }
   }, [activeData, selectedHorizon])
+
+  // Guard - nie renderuj karty bez symbolu (po wszystkich hookach)
+  if (!symbol) {
+    console.warn("CryptoCard: Missing symbol prop")
+    return null
+  }
 
   // Loading state z skeleton
   if (loading || cardLoading) {
